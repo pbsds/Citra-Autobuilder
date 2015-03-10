@@ -100,6 +100,7 @@ def AddToSite(success, files, commits, hash):
 	else:
 		subprocess.call((g_git, "clone", g_repository))
 		os.chdir(gitfolder)
+		subprocess.call((g_git, "config", "credential.helper", "store"))#store usrname and password in plaintext, but makes sure you don't have to type it again
 	
 	if not os.path.isdir("citra nightlies"): os.mkdir("citra nightlies")
 	os.chdir("citra nightlies")
@@ -182,9 +183,11 @@ def Mainloop(usr, psw, author, repo):
 def Main():
 	global g_template
 	if len(sys.argv) < 5:
-		print "Usage: bleh.py <git username> <git password> <name <email>> <github.io repository>"
+		#print "Usage: bleh.py <git username> <git password> <name <email>> <github.io repository>"
+		print "Usage: bleh.py <name <email>> <github.io repository>"
 	else:
-		usr, psw, author, repo = sys.argv[1:5]
+		#usr, psw, author, repo = sys.argv[1:5]
+		author, repo = sys.argv[1:5]
 	
 	f = open("template.html", "rb")
 	g_template = f.read().replace("\r\n", "\n").replace("\r", "\n")

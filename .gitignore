@@ -4,7 +4,7 @@
 *.pyd
 *.pyo
 #*.lnk
-*.bat
+#*.bat
 
 # OS generated files #
 .DS_Store
@@ -15,8 +15,9 @@
 ehthumbs.db
 Thumbs.db
 
-#Spesific files:
+#Specific files:
 *.zip
 *.log
 nightlybuild
 workspace
+credidentials.txt
