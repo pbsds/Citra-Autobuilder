@@ -1,3 +1,0 @@
-git, preferred msysgit. Should either be available in path or installed to default directory
-
-
