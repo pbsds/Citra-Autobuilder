@@ -1,11 +1,9 @@
-import sys, time, subprocess, glob, os
+import sys, time, subprocess, glob, os, urllib2, json
 #requires that python2 and git is available in the PATH, or that they lie in their default install directory
 
 
 #globals:
 g_repository = None
-g_username = None
-g_password = None
 g_author = None
 
 g_template = None
@@ -14,8 +12,45 @@ g_git = None
 g_python = None
 
 #helpers:
-def Say(text):
-	print time.strftime("[%H:%M:%S]"), text
+class Log:
+	def __init__(self):
+		#temp = map(int,time.strftime("%M %S").split(" "))
+		#temp[0] = 59 - temp[0]
+		#temp[1] = 59 - temp[1]
+		#reactor.callLater(60*temp[0] + temp[1] + 5, self.HandleUpdate)
+		#reactor.callLater(60*5, self.AutoFlush)
+		
+		if not os.path.exists("logs/"+time.strftime("%Y")):
+			os.mkdir("logs/"+time.strftime("%Y"))
+		
+		if not os.path.exists("logs/"+time.strftime("%Y/%B")):
+			os.mkdir("logs/"+time.strftime("%Y/%B"))
+		
+		self.file = open("logs/"+time.strftime("%Y/%B")+"/"+time.strftime("%d %B")+".txt","a")
+		
+		pass#self.file.write(time.strftime("[%H:%M:%S] ")+"Server start!\n")
+	def HandleUpdate(self):#updates the handles for new filename (call new every hour)
+		reactor.callLater(60*60, self.HandleUpdate)
+		print time.strftime("[%H:%M:%S] Handle update")
+		
+		if not os.path.exists("logs/"+time.strftime("%Y")):
+			os.mkdir("logs/"+time.strftime("%Y"))
+		
+		if not os.path.exists("logs/"+time.strftime("%Y/%B")):
+			os.mkdir("logs/"+time.strftime("%Y/%B"))
+		
+		self.file.close()
+		
+		self.file = open("logs/"+time.strftime("%Y/%B")+"/"+time.strftime("%d %B")+".txt","a")
+	def Flush(self):#Flushes the filehandle (call every 5 minutes)
+		self.file.flush()
+		os.fsync(self.file.fileno())
+	#=====
+	def Say(self, string):
+		print time.strftime("[%H:%M:%S]"), string
+		self.file.write(time.strftime("[%H:%M:%S] ") + string +'\n')
+Log = Log()
+Say = Log.Say
 def FindPythonGit():
 	global g_git, g_python
 	
@@ -54,7 +89,41 @@ def MakeIndexTableRow(link, size, commits, hash, success, debuglink, date):
 		hash = "<a href=\"https://github.com/citra-emu/citra/commit/%s\">%s</a>" % (hash, hash)
 	
 	return "\t\t\t<tr>\n%s\n\t\t\t</tr>" % ("\n".join(("\t\t\t\t<td>%s</td>" % i for i in (link, size, commits, hash, success, debuglink, date))))
-
+def CheckUpdate():
+	#get total number of commits
+	total = []
+	url = "https://api.github.com/repos/citra-emu/citra/contributors?anon=1"
+	while 1:
+		resp = urllib2.urlopen(urllib2.Request(url))
+		js = json.loads(resp.read())
+		
+		total.append(sum((n["contributions"] for n in js)))
+		
+		links = resp.info()["link"].split(", ")
+		if links[0].endswith("rel=\"next\""):
+			url = links[0].split(";")[0][1:-1]
+			continue
+		break
+	commits = sum(total)
+	
+	#get hash
+	resp = urllib2.urlopen(urllib2.Request("https://api.github.com/repos/citra-emu/citra/commits"))
+	js = json.loads(resp.read())
+	hash = js[0]["sha"]
+	
+	#check if already compiled:
+	if not os.path.exists("nightlybuild"):
+		return True
+	gitfolder = g_repository.split("/")[-1][:-4]
+	if not os.path.exists(os.path.join("nightlybuild", gitfolder)):
+		return True
+	if not os.path.exists(os.path.join("nightlybuild", gitfolder, "citra nightlies")):
+		return True
+	if not len(glob.glob(os.path.join("nightlybuild", gitfolder, "citra nightlies", "%i-%s-*" % (commits, hash)))):
+		return True
+	else:
+		return False
+	
 #doers
 def DoCompile():
 	global g_python
@@ -150,50 +219,81 @@ def AddToSite(success, files, commits, hash):
 	subprocess.call((g_git, "commit", "--author=\"%s\"" % g_author, "-m", "Added build for citra commit number %i" % commits))#, "--dry-run"))
 	subprocess.call((g_git, "commit", "--author=\"%s\"" % g_author, "-m", "Added build for citra commit number %i" % commits))#, "--dry-run"))
 	
-	subprocess.call((g_git, "push"))
+	subprocess.call((g_git, "push", "origin", "master"))
 	#cmd = subprocess.Popen((g_git, "push", "origin", "master"), stdin=subprocess.PIPE)
 	#time.sleep(5)
 	#cmd.stdin.write("%s\n"%g_username)
 	#time.sleep(1)
 	#cmd.stdin.write("%s\n"%g_password)
-	
 	#cmd.wait()
 	#while not cmd.poll():
 	#	time.sleep(0.2)
 	
 	os.chdir(prev)
 #daemon
-def Mainloop(usr, psw, author, repo):
-	global g_repository, g_username, g_password, g_author
+#def Mainloop(usr, psw, author, repo):
+def Mainloop(author, repo):
+	global g_repository, g_author
 	g_repository = repo
-	g_username = usr
-	g_password = psw
 	g_author = author
 	
-	#while 1:
-	if 1:
-		success, files, commits, hash = DoCompile()
-		#success, files, commits, hash = True, ("Citra.zip", "output.log"), 123123, "asdasdasdasdasd"
-		if hash:
-			files = [os.path.join(os.getcwd(), i) for i in files]
-			AddToSite(success, files, commits, hash)
+	jobs = []#i = (time, "job")
+	
+	#add jobs:
+	H, M, S = map(int,time.strftime("%H %M %S").split(" "))
+	nHour = 60*(59 - M) + (59 - S) + 5#next hour
+	
+	jobs.append((time.time()+60*5, "flush"))
+	jobs.append((time.time()+nHour, "HandleUpdate"))
+	jobs.append((time.time()+nHour+5-(H+1)%6, "Compile"))
+	
+	
+	while 1:
+		for t, c in jobs:
+			if time.time() >= t:
+				
 		
+		
+		
+		
+		if CheckUpdate():
+			success, files, commits, hash = DoCompile()
+			if hash:
+				files = [os.path.join(os.getcwd(), i) for i in files]
+				AddToSite(success, files, commits, hash)
+		else:
+			Say("no new version")
 		
 #do:
 def Main():
 	global g_template
-	if len(sys.argv) < 5:
-		#print "Usage: bleh.py <git username> <git password> <name <email>> <github.io repository>"
+	if len(sys.argv) < 3:
 		print "Usage: bleh.py <name <email>> <github.io repository>"
+		sys.exit()
 	else:
-		#usr, psw, author, repo = sys.argv[1:5]
-		author, repo = sys.argv[1:5]
+		author, repo = sys.argv[1:3]
 	
 	f = open("template.html", "rb")
 	g_template = f.read().replace("\r\n", "\n").replace("\r", "\n")
 	f.close()
 	
 	FindPythonGit()
-	Mainloop(usr, psw, author, repo)
+	
+	#update github.io repository:
+	if 1:
+		prev = os.getcwd()
+		if not os.path.exists("nightlybuild"): os.mkdir("nightlybuild")
+		os.chdir("nightlybuild")
+		gitfolder = repo.split("/")[-1][:-4]
+		if os.path.isdir(gitfolder):
+			os.chdir(gitfolder)
+			subprocess.call((g_git, "pull"))
+		else:
+			subprocess.call((g_git, "clone", repo))
+			os.chdir(gitfolder)
+			subprocess.call((g_git, "config", "credential.helper", "store"))#store usrname and password in plaintext, but makes sure you don't have to type it again
+		os.chdir(prev)
+	
+	Mainloop(author, repo)
 if __name__ == "__main__":
 	Main()

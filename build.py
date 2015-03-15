@@ -1,16 +1,19 @@
-import os, sys, subprocess, atexit, shutil
+import os, sys, subprocess, atexit, shutil, glob
 
 
 #todo: add Qt support, linux and possibly mac support aswell
 
 #settings:
 g_enable_QT = False
+g_64bit = False#not yet implemented
+g_debugbuild = True#don't know how to make it a non-debug build...
 
 #depencies paths
 g_git = None
 g_cmake = None
 g_mvs_link = None
 g_msbuild = None
+g_qt5 = None
 
 #helpers and init/cleanup
 def NotBool(i):
@@ -24,7 +27,7 @@ def Clean():
 			print "Unable to delete old workspace. Exiting..."
 			sys.exit(1)
 def FindDepencies():
-	global g_git, g_cmake, g_mvs_link, g_msbuild
+	global g_git, g_cmake, g_mvs_link, g_msbuild, g_qt5, g_enable_QT
 	
 	#find depencies:
 	for i in (os.environ["ProgramFiles"], os.environ["ProgramFiles(x86)"], "C:\Program Files (x86)", "C:\Program Files"):
@@ -52,6 +55,24 @@ def FindDepencies():
 			print ("Git, "*NotBool(g_git) + "CMake, "*NotBool(g_cmake) + "Microsoft Visual Studio 12.0 2013, "*NotBool(g_mvs_link) + "MSBuild, "*NotBool(g_msbuild)) [:-2] + " not found!"
 			print "Exiting..."
 			sys.exit(1)
+	
+	drives = (i[0].upper() for i in (os.environ["ProgramFiles"], os.environ["ProgramFiles(x86)"], "C"))
+	for i in drives:
+		if os.path.exists("%s:/Qt" % i):
+			
+			for dir in glob.glob("%s:/Qt/5*" % i):
+				for ver in ("msvc2013_opengl",):#("msvc2013_64_opengl", "msvc2013_opengl"):
+					if os.path.exists(os.path.join(dir, ver, "bin", "qmake.exe")):
+						g_qt5 = os.path.join(dir, ver)
+						break
+				if g_qt5: break	
+			if g_qt5:break
+	else:
+		if g_enable_QT:
+			print "Error"
+			print "Qt 5 not found!"
+			print "Exiting..."
+			sys.exit(1)
 
 #Do the work
 def FetchCitra():
@@ -70,14 +91,40 @@ def FetchCitra():
 	
 	os.chdir(prev)
 def DoCMake():
-	global g_cmake, g_enable_QT, g_mvs_link
+	global g_cmake, g_enable_QT, g_mvs_link, g_qt5
 	prev = os.getcwd()
 	os.chdir("workspace\\build")
 	
 	#setup/generate
 	print "\nGenerating CMake..."
-	if subprocess.call((g_cmake, "-G", "Visual Studio 12 2013", os.path.join(prev, "workspace\\citra"))):
-		print "ech"
+	args = [g_cmake,
+	        "-G", "Visual Studio 12 2013",#32 bit?
+	        "-D", "ENABLE_QT:BOOL=" + ("ON" if g_enable_QT else "OFF"),
+	        os.path.join(prev, "workspace\\citra")]
+	if g_enable_QT:
+		args.insert(-1, "-D")
+		args.insert(-1, "QT_QMAKE_EXECUTABLE:FILEPATH=" + os.path.join(g_qt5, "bin", "qmake.exe").replace("\\", "/"))
+		args.insert(-1, "-D")
+		args.insert(-1, "Qt5_DIR:PATH=" + os.path.join(g_qt5, "lib", "cmake", "Qt5").replace("\\", "/"))
+	
+	success = not subprocess.call(args)
+	if not success and g_enable_QT:
+		#sys.exit(1)#temp
+		success = not subprocess.call((g_cmake, "-G", "Visual Studio 12 2013", "-D", "ENABLE_QT:BOOL=OFF", os.path.join(prev, "workspace\\citra")))
+		if success:
+			print "Qt not found, compiling without..."
+			g_enable_QT = False
+		else:
+			print "cmake failed!"
+			sys.exit(1)
+	
+	os.chdir(prev)
+	return success
+	
+	#old method:
+	if 0:
+	#if subprocess.call((g_cmake, "-G", "Visual Studio 12 2013", os.path.join(prev, "workspace\\citra"))):
+		#print "ech"
 	
 		#configure
 		print "\nConfiguring CMake..."
@@ -102,13 +149,28 @@ def DoCMake():
 	
 	os.chdir(prev)
 def DoCompile():
-	global g_msbuild
+	global g_msbuild, g_debugbuild
 	prev = os.getcwd()
 	os.chdir("workspace\\build")
-	print "\nCompiling citra..."
+	print "\nCompiling Citra..."
 	if subprocess.call((g_msbuild, "/t:citra", "citra.sln")):
 		print "\nCompile failed!"
 		sys.exit(1)
+	if g_enable_QT:
+		print "\nCompiling Citra Qt..."
+		if subprocess.call((g_msbuild, "/t:citra-qt", "citra.sln")):
+			print "\nCompile (qt) failed!"
+			sys.exit(1)
+		
+		print "\nAdding Citra Qt DLLs..."
+		files  = ["icudt53", "icuin53", "icuuc53"]
+		files += [i + "d"*g_debugbuild for i in ("Qt5Core", "Qt5Gui", "Qt5OpenGL", "Qt5Widgets")]
+		for i in files:
+			shutil.copyfile(os.path.join(g_qt5, "bin", i+".dll"), os.path.join("bin", "Debug", i+".dll"))
+		
+		
+		
+		
 	os.chdir(prev)
 
 def Main():
@@ -124,4 +186,7 @@ def Main():
 
 	shutil.make_archive("Citra", 'zip', "workspace\\build\\bin")
 if __name__ == "__main__":
+	if len(sys.argv) >= 2:
+		if sys.argv[1].lower() == "qt":
+			g_enable_QT = True
 	Main()

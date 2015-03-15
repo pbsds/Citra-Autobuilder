@@ -1,3 +1,10 @@
 git, preferred msysgit. Should either be available in path or installed to default directory
+Visual Studio 12 2013 must be installed in default directory
+Qt 5 is optional if you want debugger mode:
 
+For the debugger/Qt GUI, you'll need to install Qt 5:
 
+Download the Qt Online installer and launch it. When asked which components to install, select the
+msvc2013 OpenGL version for the processor architecture of your choice. (Be careful to use the OpenGL
+versions, or Citra will fail to initialize.) You might also want to install Qt Designer if you plan on
+modifying Citra's user interface.
