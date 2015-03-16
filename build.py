@@ -4,9 +4,9 @@ import os, sys, subprocess, atexit, shutil, glob
 #todo: add Qt support, linux and possibly mac support aswell
 
 #settings:
-g_enable_QT = False
+g_enable_QT = True
 g_64bit = False#not yet implemented
-g_debugbuild = True#don't know how to make it a non-debug build...
+g_debugbuild = False#don't know how to make it a non-debug build yet...
 
 #depencies paths
 g_git = None
@@ -153,12 +153,18 @@ def DoCompile():
 	prev = os.getcwd()
 	os.chdir("workspace\\build")
 	print "\nCompiling Citra..."
-	if subprocess.call((g_msbuild, "/t:citra", "citra.sln")):
+	
+	#msbuild  /t:citra /p:Configuration=Release citra.sln
+	
+	solution = "/p:Configuration=Debug" if g_debugbuild else "/p:Configuration=Release"
+	output = os.path.join("bin", "Debug" if g_debugbuild else "Release")
+	
+	if subprocess.call((g_msbuild, "/t:citra", solution, "citra.sln")):
 		print "\nCompile failed!"
 		sys.exit(1)
 	if g_enable_QT:
 		print "\nCompiling Citra Qt..."
-		if subprocess.call((g_msbuild, "/t:citra-qt", "citra.sln")):
+		if subprocess.call((g_msbuild, "/t:citra-qt", solution, "citra.sln")):
 			print "\nCompile (qt) failed!"
 			sys.exit(1)
 		
@@ -166,9 +172,9 @@ def DoCompile():
 		files  = ["icudt53", "icuin53", "icuuc53"]
 		files += [i + "d"*g_debugbuild for i in ("Qt5Core", "Qt5Gui", "Qt5OpenGL", "Qt5Widgets")]
 		for i in files:
-			shutil.copyfile(os.path.join(g_qt5, "bin", i+".dll"), os.path.join("bin", "Debug", i+".dll"))
-		
-		
+			shutil.copyfile(os.path.join(g_qt5, "bin", i+".dll"), os.path.join(output, i+".dll"))
+		os.mkdir(os.path.join(output, "platforms"))
+		shutil.copyfile(os.path.join(g_qt5, "plugins", "platforms", "qwindows.dll"), os.path.join(output, "platforms", "qwindows.dll"))
 		
 		
 	os.chdir(prev)
@@ -187,6 +193,9 @@ def Main():
 	shutil.make_archive("Citra", 'zip', "workspace\\build\\bin")
 if __name__ == "__main__":
 	if len(sys.argv) >= 2:
-		if sys.argv[1].lower() == "qt":
-			g_enable_QT = True
+		for i in sys.arg[1:]:
+			if i.lower() == "no-qt":
+				g_enable_QT = False
+			if i.lower() == "debug":
+				g_debugbuild = True
 	Main()

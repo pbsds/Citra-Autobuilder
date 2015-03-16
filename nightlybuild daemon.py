@@ -19,6 +19,8 @@ class Log:
 		#temp[1] = 59 - temp[1]
 		#reactor.callLater(60*temp[0] + temp[1] + 5, self.HandleUpdate)
 		#reactor.callLater(60*5, self.AutoFlush)
+		if not os.path.exists("logs"):
+			os.mkdir("logs")
 		
 		if not os.path.exists("logs/"+time.strftime("%Y")):
 			os.mkdir("logs/"+time.strftime("%Y"))
@@ -26,7 +28,7 @@ class Log:
 		if not os.path.exists("logs/"+time.strftime("%Y/%B")):
 			os.mkdir("logs/"+time.strftime("%Y/%B"))
 		
-		self.file = open("logs/"+time.strftime("%Y/%B")+"/"+time.strftime("%d %B")+".txt","a")
+		self.file = open("logs/"+time.strftime("%Y/%B")+"/"+time.strftime("%d %B")+".log","a")
 		
 		pass#self.file.write(time.strftime("[%H:%M:%S] ")+"Server start!\n")
 	def HandleUpdate(self):#updates the handles for new filename (call new every hour)
@@ -41,14 +43,16 @@ class Log:
 		
 		self.file.close()
 		
-		self.file = open("logs/"+time.strftime("%Y/%B")+"/"+time.strftime("%d %B")+".txt","a")
+		self.file = open("logs/"+time.strftime("%Y/%B")+"/"+time.strftime("%d %B")+".log","a")
 	def Flush(self):#Flushes the filehandle (call every 5 minutes)
 		self.file.flush()
 		os.fsync(self.file.fileno())
 	#=====
 	def Say(self, string):
-		print time.strftime("[%H:%M:%S]"), string
-		self.file.write(time.strftime("[%H:%M:%S] ") + string +'\n')
+		out = time.strftime("[%H:%M:%S] %%s") % string
+		self.file.write(out)
+		self.file.write("\n")
+		print out
 Log = Log()
 Say = Log.Say
 def FindPythonGit():
@@ -210,7 +214,7 @@ def AddToSite(success, files, commits, hash):
 	
 	#make index file
 	f = open("index.html", "wb")
-	f.write(g_template.replace("<!--SPLIT-->", "\n".join(map(lambda x: x[1], sorted(buildlist, lambda x: -x[0])))))
+	f.write(g_template.replace("<!--SPLIT-->", "\n".join(map(lambda x: x[1], sorted(buildlist, key=lambda x: -x[0])))))
 	f.close()
 	
 	#commit:
@@ -248,11 +252,11 @@ def Mainloop(author, repo):
 	jobs.append((time.time()+nHour+5-(H+1)%6, "Compile"))
 	
 	
-	while 1:
-		for t, c in jobs:
-			if time.time() >= t:
-				
-		
+	#while 1:
+	#	for t, c in jobs:
+	#		if time.time() >= t:
+	#			
+	if 1:	
 		
 		
 		
