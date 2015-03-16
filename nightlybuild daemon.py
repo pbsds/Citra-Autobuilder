@@ -1,4 +1,8 @@
-import sys, time, subprocess, glob, os, urllib2, json
+import sys, time, subprocess, glob, os, urllib, urllib2, json
+try:
+	import requests
+except ImportError:
+	print "requests not installed, exiting..."
 #requires that python2 and git is available in the PATH, or that they lie in their default install directory
 
 
@@ -77,16 +81,13 @@ def FindPythonGit():
 	else:
 		Say("Python not found, exiting...")
 		sys.exit(1)
-def MakeIndexTableRow(link, size, commits, hash, success, debuglink, date):
-	for i, p in enumerate(("", "K", "M", "G", "T")):
-		if float(size)/(1024**i) >= 900: continue
-		size = "%.2f%sB" % (float(size)/(1024**i), p)
-		break
-		
-	link = "<a href=\"%s\">Download Citra.zip</a>" % link if success else "None"
-	debuglink = "<a href=\"%s\">output.log</a>" % debuglink
+def MakeIndexTableRow((commits, hash, success, hour, minute, second, day, month, year, link, size, debuglink)):
+	link = "<a href=\"%s\">Download Citra</a>" % link if success=="True" else "None"
+	debuglink = "<a href=\"%s\">output log</a>" % debuglink
 	
-	success = ("Failed", "Successful")[1*success]
+	date = "%s:%s:%s %s/%s-%s" % (hour, minute, second, day, month, year)
+	
+	success = ("Failed", "Successful")[1*success=="True"]
 	
 	if hash:
 		commits = "<a href=\"https://github.com/citra-emu/citra/commit/%s\">%s</a>" % (hash, commits)
@@ -127,7 +128,24 @@ def CheckUpdate():
 		return True
 	else:
 		return False
+def Upload(upload_filepath):#to pomf.se
+	file = open(upload_filepath, "rb")
+	try:
+		response = requests.post(url="http://pomf.se/upload.php", files={"files[]":file})
+	except Exception as e:
+		file.close()
+		print "error uploading", upload_filepath
+		print e
+		return False, ""
+	file.close()
 	
+	js = json.loads(response.text)
+	#print js["success"]
+	#print js["files"][0]["url"]
+	
+	return js["success"], "http://a.pomf.se/" + js["files"][0]["url"]
+
+
 #doers
 def DoCompile():
 	global g_python
@@ -161,6 +179,24 @@ def DoCompile():
 	os.chdir(prev)
 	return True, ["Citra.zip", "output.log"], commits, hash
 def AddToSite(success, files, commits, hash):
+	#upload files:
+	citrabuild, logfile = "None", "None"
+	buildsize = ""
+	for i in files:
+		uploaded, url = Upload(i)
+		if uploaded:
+			if i[-3:] == "log":
+				logfile = url
+			if i[-3:] == "zip":
+				citrabuild = url
+				
+				buildsize = os.path.getsize(i)
+				for i, p in enumerate(("", "K", "M", "G", "T")):
+					if float(buildsize)/(1024**i) >= 900: continue
+					buildsize = "%.2f%sB" % (float(buildsize)/(1024**i), p)
+					break
+	
+	#update github.io repository:
 	global g_repository, g_git
 	prev = os.getcwd()
 	if not os.path.exists("nightlybuild"): os.mkdir("nightlybuild")
@@ -169,7 +205,7 @@ def AddToSite(success, files, commits, hash):
 	gitfolder = g_repository.split("/")[-1][:-4]
 	if os.path.isdir(gitfolder):
 		os.chdir(gitfolder)
-		subprocess.call((g_git, "pull"))
+		#subprocess.call((g_git, "pull"))
 	else:
 		subprocess.call((g_git, "clone", g_repository))
 		os.chdir(gitfolder)
@@ -178,43 +214,35 @@ def AddToSite(success, files, commits, hash):
 	if not os.path.isdir("citra nightlies"): os.mkdir("citra nightlies")
 	os.chdir("citra nightlies")
 	
-	#if previous build of same version exists
-	if len(glob.glob("%i-%s-*" % (commits, hash))):
-		pass#remove citra and output.log
-		return
+	#read previously built citras:
+	buildlist = []#i = (commits, hash, success, hour, minute, second, day, month, year, build url, size, log url, )
+	if os.path.exists("builds.dat"):
+		f = open("builds.dat", "rb")
+		content = f.read()
+		f.close()
+		if content:
+			buildlist = [i.split("-") for i in content.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
 	
-	#move to proper place:
-	dir = "%i-%s-%s-%s" % (commits, hash, success, time.strftime("%H-%M-%S-%d-%m-%Y"))
-	os.mkdir(dir)
-	for i in files:
-		os.rename(i, os.path.join(dir, os.path.basename(i)))
+	#check if previous build of same version exists:
+	check = map(str, (commits, hash, success))
+	for i in buildlist: 
+		if i[:3] == check:
+			pass#remove citra and output.log?
+			return False
 	
-	#sort what i want:
-	buildlist = []
-	for folder in (os.path.basename(i) for i in glob.glob("*") if os.path.isdir(i)):
-		index, hash, success, H, M, S, d, m, Y = folder.split("-")
-		date = "%s:%s:%s %s/%s-%s" % (H, M, S, d, m, Y)
-		success = success == "True"
-		index = int(index)
-		link = "%s/Citra.zip" % folder
-		debuglink = "%s/output.log" % folder
-		
-		if success:
-			size = os.path.getsize(os.path.join(folder, "Citra.zip"))
-		else:
-			size = 0
-		
-		#filter here?
-		pass
-		
-		buildlist.append((index, MakeIndexTableRow(link, size, index, hash, success, debuglink, date)))
+	#add new build:
+	new = [commits, hash, success] + time.strftime("%H-%M-%S-%d-%m-%Y").split("-") + [citrabuild, buildsize, logfile]
+	buildlist.insert(0, map(str, new))
+	buildlist = sorted(buildlist, key=lambda x: -int(x[0]))#comment out?
 	
-	#i want about 40?
-	pass
+	#save to builds.dat:
+	f = open("builds.dat", "wb")
+	f.write("\n".join("-".join(i) for i in buildlist))
+	f.close()
 	
-	#make index file
+	#make new index file:
 	f = open("index.html", "wb")
-	f.write(g_template.replace("<!--SPLIT-->", "\n".join(map(lambda x: x[1], sorted(buildlist, key=lambda x: -x[0])))))
+	f.write(g_template.replace("<!--REPLACE-->", "\n".join((MakeIndexTableRow(i) for i in buildlist))))
 	f.close()
 	
 	#commit:

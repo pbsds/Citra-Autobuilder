@@ -6,7 +6,7 @@ import os, sys, subprocess, atexit, shutil, glob
 #settings:
 g_enable_QT = True
 g_64bit = False#not yet implemented
-g_debugbuild = False#don't know how to make it a non-debug build yet...
+g_debugbuild = False
 
 #depencies paths
 g_git = None
