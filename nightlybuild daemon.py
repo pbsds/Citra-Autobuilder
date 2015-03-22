@@ -94,7 +94,7 @@ def MakeIndexTableRow((commits, hash, success, hour, minute, second, day, month,
 		hash = "<a href=\"https://github.com/citra-emu/citra/commit/%s\">%s</a>" % (hash, hash)
 	
 	return "\t\t\t<tr>\n%s\n\t\t\t</tr>" % ("\n".join(("\t\t\t\t<td>%s</td>" % i for i in (link, size, commits, hash, success, debuglink, date))))
-def CheckUpdate():
+def GetCitraCurrent():
 	#get total number of commits
 	total = []
 	url = "https://api.github.com/repos/citra-emu/citra/contributors?anon=1"
@@ -116,6 +116,13 @@ def CheckUpdate():
 	js = json.loads(resp.read())
 	hash = js[0]["sha"]
 	
+	return commits, hash
+def CheckUpdate():
+	try:
+		commits, hash = GetCitraCurrent()
+	except:
+		return False
+	
 	#check if already compiled:
 	if not os.path.exists("nightlybuild"):
 		return True
@@ -134,10 +141,10 @@ def CheckUpdate():
 		if content:
 			buildlist = [i.split("-") for i in content.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
 	
-	#check if alreadyn buildt:
-	check = map(str, (commits, hash))
+	#check if already buildt:
+	check = map(str, (commits, hash, "True"))
 	for i in buildlist:#this could become very intensive after many compiles. maybe only read the first 5?
-		if i[:2] == check:
+		if i[:3] == check:
 			pass#remove citra and output.log?
 			return False
 	return True
@@ -171,8 +178,13 @@ def DoCompile():
 	if subprocess.call((g_python, "build.py"), stdout=f, stderr=f):#i hope this method will write to the file untill it crashes
 		Say("build failed!")
 		f.close()
-		#todo: find the git info on failed build
-		return False, ["output.log"], 0, ""
+		
+		try:
+			commits, hash = GetCitraCurrent()
+		except:
+			commits, hash = 0, ""
+		
+		return False, ["output.log"], commits, hash
 	f.close()
 	
 	#get commitcount and hash
@@ -184,9 +196,15 @@ def DoCompile():
 		if hash[-1] == "\n":
 			hash = hash[:-1]
 	except Exception as e:# subprocess.CalledProcessError:
-		Say("Unable to get has and commit count")
+		Say("Unable to get hash and commit count from local repository")
 		Say("\n"+str(e))
-		return False, ["output.log"], 0, ""
+		
+		try:
+			commits, hash = GetCitraCurrent()
+		except:
+			commits, hash = 0, ""
+		
+		return False, ["output.log"], commits, hash
 	
 	os.chdir(prev)
 	return True, ["Citra.zip", "output.log"], commits, hash
@@ -208,7 +226,7 @@ def AddToSite(success, files, commits, hash):
 					buildsize = "%.2f%sB" % (float(buildsize)/(1024**i), p)
 					break
 	
-	#update github.io repository:
+	#update local github.io repository:
 	global g_repository, g_git
 	prev = os.getcwd()
 	if not os.path.exists("nightlybuild"): os.mkdir("nightlybuild")
@@ -235,43 +253,47 @@ def AddToSite(success, files, commits, hash):
 		if content:
 			buildlist = [i.split("-") for i in content.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
 	
-	#check if previous build of same version exists:
+	#check if previous build of same the version exists:
 	check = map(str, (commits, hash, success))
 	for i in buildlist: #this could become very intensive after many compiles. maybe only read the first 5? it's sorted anyway...
 		if i[:3] == check:
 			pass#remove citra and output.log?
 			return False
 	
-	#add new build:
+	#add the new build:
 	new = [commits, hash, success] + time.strftime("%H-%M-%S-%d-%m-%Y").split("-") + [citrabuild, buildsize, logfile]
 	buildlist.insert(0, map(str, new))
-	buildlist = sorted(buildlist, key=lambda x: -int(x[0]))#comment out?
+	buildlist = sorted(buildlist, key=lambda x: -int(x[0]))#comment this out?
 	
 	#save to builds.dat:
 	f = open("builds.dat", "wb")
 	f.write("\n".join("-".join(i) for i in buildlist))
 	f.close()
 	
-	#write index files:
-	f = open("index.html", "wb")
-	f.write(g_template.replace("<!--REPLACE-->", "\n".join((MakeIndexTableRow(i) for i in buildlist))))
-	f.close()
+	#write the index files:
+	pages = max(((len(buildlist)-1)//50 + 1, 1))
+	for i in xrange(pages):
+		navigation = []
+		if i >= 1:
+			if i == 1:
+				navigation.append("<a href=\"index.html\">Previous page</a>")
+			else:
+				navigation.append("<a href=\"index-%s.html\">Previous page</a>" % (i))
+		if i+1 < pages:
+			navigation.append("<a href=\"index-%s.html\">Next page</a>" (i+2))
+		
+		table = g_template.replace("<!--BUILDS-->", "\n".join((MakeIndexTableRow(i) for i in buildlist[i*50:i*50+50]))).replace("<!--NAVIGATION-->", " ".join(navigation))
+		
+		f = open("index-%s.html" % (i+1) if i else "index.html", "wb")
+		f.write(table)
+		f.close()
 	
 	#commit:
 	os.chdir(os.path.join(prev, "nightlybuild", gitfolder))
 	subprocess.call((g_git, "add", "."))
 	subprocess.call((g_git, "commit", "--author=\"%s\"" % g_author, "-m", "Added build for citra commit number %i" % commits))#, "--dry-run"))
-	subprocess.call((g_git, "commit", "--author=\"%s\"" % g_author, "-m", "Added build for citra commit number %i" % commits))#, "--dry-run"))
 	
 	subprocess.call((g_git, "push", "origin", "master"))
-	#cmd = subprocess.Popen((g_git, "push", "origin", "master"), stdin=subprocess.PIPE)
-	#time.sleep(5)
-	#cmd.stdin.write("%s\n"%g_username)
-	#time.sleep(1)
-	#cmd.stdin.write("%s\n"%g_password)
-	#cmd.wait()
-	#while not cmd.poll():
-	#	time.sleep(0.2)
 	
 	os.chdir(prev)
 
@@ -304,7 +326,8 @@ def Mainloop(author, repo):
 						success, files, commits, hash = DoCompile()
 						if hash:
 							files = [os.path.join(os.getcwd(), i) for i in files]
-							AddToSite(success, files, commits, hash)
+							if not AddToSite(success, files, commits, hash):
+								Say("Failed version already exists")#happens when it is unsuccessfull on same build twise
 					else:
 						Say("No new citra version, will not compile.")
 					
