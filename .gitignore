@@ -17,6 +17,7 @@ Thumbs.db
 
 #Specific files and folders:
 *.zip
+*.7z
 *.log
 nightlybuild
 workspace

@@ -1,6 +1,5 @@
 import os, sys, subprocess, atexit, shutil, glob
 
-
 #todo: add Qt support, linux and possibly mac support aswell
 
 #settings:
@@ -14,6 +13,7 @@ g_cmake = None
 g_mvs_link = None
 g_msbuild = None
 g_qt5 = None
+g_7z = None
 
 #helpers and init/cleanup
 def NotBool(i):
@@ -27,7 +27,7 @@ def Clean():
 			print "Unable to delete old workspace. Exiting..."
 			sys.exit(1)
 def FindDepencies():
-	global g_git, g_cmake, g_mvs_link, g_msbuild, g_qt5, g_enable_QT
+	global g_git, g_cmake, g_mvs_link, g_msbuild, g_qt5, g_enable_QT, g_7z
 	
 	#find depencies:
 	for i in (os.environ["ProgramFiles"], os.environ["ProgramFiles(x86)"], "C:\Program Files (x86)", "C:\Program Files"):
@@ -43,16 +43,19 @@ def FindDepencies():
 		#MSBUILD
 		check = os.path.join(i, "MSBuild\\12.0\\Bin\\MSBuild.exe")
 		if os.path.exists(check) and os.path.isfile(check): g_msbuild = check
+		#7-zip
+		check = os.path.join(i, "7-Zip/7z.exe")
+		if os.path.exists(check) and os.path.isfile(check): g_7z = check
 		
-		if g_git and g_cmake and g_mvs_link and g_msbuild:
+		if g_git and g_cmake and g_mvs_link and g_msbuild and g_7z:
 			break
 	else:#error reporting
 		if not g_git and not subprocess.call(("git", "version")):
 			g_git = "git"
 		
-		if not g_git or not g_cmake or not g_mvs_link or not g_msbuild:
+		if not g_git or not g_cmake or not g_mvs_link or not g_msbuild or not g_7z:
 			print "Error"
-			print ("Git, "*NotBool(g_git) + "CMake, "*NotBool(g_cmake) + "Microsoft Visual Studio 12.0 2013, "*NotBool(g_mvs_link) + "MSBuild, "*NotBool(g_msbuild)) [:-2] + " not found!"
+			print ("Git, "*NotBool(g_git) + "CMake, "*NotBool(g_cmake) + "Microsoft Visual Studio 12.0 2013, "*NotBool(g_mvs_link) + "MSBuild, "*NotBool(g_msbuild) + "7-Zip, "*NotBool(g_7z))[:-2] + " not found!"
 			print "Exiting..."
 			sys.exit(1)
 	
@@ -180,17 +183,26 @@ def DoCompile():
 	os.chdir(prev)
 
 def Main():
+	global g_7z
 	FindDepencies()
 
 	Clean()
 	os.mkdir("workspace")
 	os.mkdir("workspace\\build")
-
+	
 	FetchCitra()
 	DoCMake()
 	DoCompile()
-
-	shutil.make_archive("Citra", 'zip', "workspace\\build\\bin")
+	
+	#compress:
+	#shutil.make_archive("Citra", 'zip', "workspace\\build\\bin")
+	prev = os.getcwd()
+	os.chdir("workspace")
+	os.chdir("build")
+	os.chdir("bin")
+	subprocess.call([g_7z, 'a', 'Citra.7z', "*"])
+	shutil.move("Citra.7z", os.path.join(prev, "Citra.7z"))
+	os.chdir(prev)
 if __name__ == "__main__":
 	if len(sys.argv) >= 2:
 		for i in sys.arg[1:]:

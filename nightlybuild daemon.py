@@ -207,7 +207,7 @@ def DoCompile():
 		return False, ["output.log"], commits, hash
 	
 	os.chdir(prev)
-	return True, ["Citra.zip", "output.log"], commits, hash
+	return True, ["Citra.7z", "output.log"], commits, hash
 def AddToSite(success, files, commits, hash):
 	#upload files:
 	citrabuild, logfile = "None", "None"

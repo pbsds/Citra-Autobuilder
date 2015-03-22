@@ -1,6 +1,10 @@
 git, preferred msysgit. Must be available in either the PATH or installed to the default directory
 
+Cmake must be installed to the default directory
+
 Visual Studio 12 2013 must be installed in default directory
+
+7-zip must be installed to the default directory
 
 Qt 5 is optional if you want debugger mode:
 
@@ -11,4 +15,6 @@ Qt 5 is optional if you want debugger mode:
 	versions, or Citra will fail to initialize.) You might also want to install Qt Designer if you plan on
 	modifying Citra's user interface.
 
-requests for python, if you want to use the nightly builder
+requests for python is optional, you need it if you want to use the nightly builder
+
+python must be installed to the default directory or available in the PATH if you want to use the nightly builder
