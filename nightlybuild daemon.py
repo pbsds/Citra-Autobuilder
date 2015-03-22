@@ -217,7 +217,7 @@ def AddToSite(success, files, commits, hash):
 		if uploaded:
 			if i[-3:] == "log":
 				logfile = url
-			if i[-3:] == "zip":
+			if i[-3:] in ("zip", "7z"):
 				citrabuild = url
 				
 				buildsize = os.path.getsize(i)
