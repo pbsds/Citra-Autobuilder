@@ -124,10 +124,23 @@ def CheckUpdate():
 		return True
 	if not os.path.exists(os.path.join("nightlybuild", gitfolder, "citra nightlies")):
 		return True
-	if not len(glob.glob(os.path.join("nightlybuild", gitfolder, "citra nightlies", "%i-%s-*" % (commits, hash)))):
-		return True
-	else:
-		return False
+	
+	#read previously built citras:
+	buildlist = []#i = (commits, hash, success, hour, minute, second, day, month, year, build url, size, log url, )
+	if os.path.exists(os.path.join("nightlybuild", gitfolder, "citra nightlies", "builds.dat")):
+		f = open(os.path.join("nightlybuild", gitfolder, "citra nightlies", "builds.dat"), "rb")
+		content = f.read()
+		f.close()
+		if content:
+			buildlist = [i.split("-") for i in content.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+	
+	#check if alreadyn buildt:
+	check = map(str, (commits, hash))
+	for i in buildlist:#this could become very intensive after many compiles. maybe only read the first 5?
+		if i[:2] == check:
+			pass#remove citra and output.log?
+			return False
+	return True
 def Upload(upload_filepath):#to pomf.se
 	file = open(upload_filepath, "rb")
 	try:
@@ -145,8 +158,7 @@ def Upload(upload_filepath):#to pomf.se
 	
 	return js["success"], "http://a.pomf.se/" + js["files"][0]["url"]
 
-
-#doers
+#doers:
 def DoCompile():
 	global g_python
 	Say("Building citra...")
@@ -225,7 +237,7 @@ def AddToSite(success, files, commits, hash):
 	
 	#check if previous build of same version exists:
 	check = map(str, (commits, hash, success))
-	for i in buildlist: 
+	for i in buildlist: #this could become very intensive after many compiles. maybe only read the first 5? it's sorted anyway...
 		if i[:3] == check:
 			pass#remove citra and output.log?
 			return False
@@ -240,7 +252,7 @@ def AddToSite(success, files, commits, hash):
 	f.write("\n".join("-".join(i) for i in buildlist))
 	f.close()
 	
-	#make new index file:
+	#write index files:
 	f = open("index.html", "wb")
 	f.write(g_template.replace("<!--REPLACE-->", "\n".join((MakeIndexTableRow(i) for i in buildlist))))
 	f.close()
@@ -262,40 +274,52 @@ def AddToSite(success, files, commits, hash):
 	#	time.sleep(0.2)
 	
 	os.chdir(prev)
+
 #daemon
-#def Mainloop(usr, psw, author, repo):
 def Mainloop(author, repo):
 	global g_repository, g_author
 	g_repository = repo
 	g_author = author
 	
+	#queue
 	jobs = []#i = (time, "job")
 	
 	#add jobs:
-	H, M, S = map(int,time.strftime("%H %M %S").split(" "))
+	M, S = map(int,time.strftime("%M %S").split(" "))
 	nHour = 60*(59 - M) + (59 - S) + 5#next hour
 	
 	jobs.append((time.time()+60*5, "flush"))
+	#jobs.append((time.time()+60*60, "HandleUpdate"))
 	jobs.append((time.time()+nHour, "HandleUpdate"))
-	jobs.append((time.time()+nHour+5-(H+1)%6, "Compile"))
+	# jobs.append((time.time()+60*60*6, "Compile"))
+	jobs.append((0, "Compile"))
 	
-	
-	#while 1:
-	#	for t, c in jobs:
-	#		if time.time() >= t:
-	#			
-	if 1:	
+	while 1:
+		rem = []
+		for i, (t, c) in enumerate(jobs):
+			if time.time() >= t:
+				if c=="Compile":
+					if CheckUpdate():
+						Say("New citra version, compiling...")
+						success, files, commits, hash = DoCompile()
+						if hash:
+							files = [os.path.join(os.getcwd(), i) for i in files]
+							AddToSite(success, files, commits, hash)
+					else:
+						Say("No new citra version, will not compile.")
+					
+					jobs.append((time.time()+60*60*6, "Compile"))#queue next job
+				elif c=="flush":
+					Log.Flush()
+					jobs.append((time.time()+60*5, "flush"))#queue next job
+				elif c=="HandleUpdate":
+					Say("Handle update")
+					Log.HandleUpdate()
+					jobs.append((time.time()+60*60, "HandleUpdate"))#queue next job
+				rem.append(i)
+		for i in rem[::-1]: del jobs[i]
 		
-		
-		
-		if CheckUpdate():
-			success, files, commits, hash = DoCompile()
-			if hash:
-				files = [os.path.join(os.getcwd(), i) for i in files]
-				AddToSite(success, files, commits, hash)
-		else:
-			Say("no new version")
-		
+		time.sleep(5)
 #do:
 def Main():
 	global g_template
